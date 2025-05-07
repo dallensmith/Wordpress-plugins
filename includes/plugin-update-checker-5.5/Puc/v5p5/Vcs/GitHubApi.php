@@ -147,14 +147,14 @@ if ( !class_exists(GitHubApi::class, false) ):
 					if ( file_exists($bundledParsedownPath) ) {
 						// Check if Parsedown class exists AND has the 'text' method.
 						// If not, or if it seems incomplete, try to load our bundled one.
-						if ( !class_exists('\\Parsedown', false) || !method_exists('\\Parsedown', 'text') ) {
+						if ( !class_exists('Parsedown', false) || !method_exists('Parsedown', 'text') ) { // Rely on "use Parsedown;"
 							require_once($bundledParsedownPath);
 						}
 					}
 
 					// Now, check again if Parsedown is usable
-					if ( class_exists('\\Parsedown', false) && method_exists('\\Parsedown', 'text') ) {
-						$pd = new \\Parsedown();
+					if ( class_exists('Parsedown', false) && method_exists('Parsedown', 'text') ) { // Rely on "use Parsedown;"
+						$pd = new Parsedown(); // Rely on "use Parsedown;"
 						$reference->changelog = $pd->text($release->body);
 					} else {
 						//Fall back to a plain text version if Parsedown is not available or incomplete.
