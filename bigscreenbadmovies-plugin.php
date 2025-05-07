@@ -3,7 +3,7 @@
  * Plugin Name:       Big Screen Bad Movies Integration
  * Plugin URI:        # Update with your plugin's URL if you have one
  * Description:       Integrates NocoDB movie data with WordPress. Creates an 'Experiment' CPT and a custom admin page for managing experiments and movies.
- * Version: 1.0.2
+ * Version: 1.0.4
  * Author:            # Your Name Here
  * Author URI:        # Your Website URL
  * License:           GPL v2 or later
