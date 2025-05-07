@@ -4,7 +4,7 @@ Tags: movies, tmdb, nocodb, custom post type, admin interface
 Requires at least: 5.8
 Tested up to: # We can update this later, e.g., current WP version
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPL v2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -41,6 +41,9 @@ Key Features:
 2.  The plugin settings page.
 
 == Changelog ==
+
+= 1.0.1 - 2025-05-07 =
+*   Test update. Minor adjustments for update checker testing.
 
 = 1.0.0 - 2025-05-07 =
 *   Initial release.
