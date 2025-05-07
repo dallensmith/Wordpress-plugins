@@ -25,6 +25,7 @@ class BigScreenBadMovies_Plugin {
 		if ( defined( 'BSBM_PLUGIN_VERSION' ) ) { $this->version = BSBM_PLUGIN_VERSION; } else { $this->version = '1.0.0'; }
 		$this->plugin_name = 'bsbm-integration';
 		$this->define_hooks();
+		$this->init_updater(); // Add this line
 	}
 
 	private function define_hooks() {
@@ -405,5 +406,27 @@ class BigScreenBadMovies_Plugin {
 	public function get_plugin_name() { return $this->plugin_name; }
 	public function get_version() { return $this->version; }
 	public function run() { /* ... */ }
+
+	/**
+	 * Initialize the plugin update checker.
+	 *
+	 * @since 1.0.0
+	 */
+	private function init_updater() {
+		if ( ! class_exists( 'YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+			return; // Library not loaded
+		}
+		$myUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+			'https://github.com/dallensmith/Wordpress-plugins/', // GitHub repository URL.
+			BSBM_PLUGIN_PATH . 'bigscreenbadmovies-plugin.php', // Main plugin file.
+			'bigscreenbadmovies-plugin' // Plugin slug.
+		);
+
+		// Set the branch to check for updates.
+		$myUpdateChecker->setBranch('main');
+
+		// Optional: If your repository is private, uncomment the following line and add your Personal Access Token.
+		// $myUpdateChecker->setAuthentication('YOUR_GITHUB_PAT');
+	}
 
 } // End class BigScreenBadMovies_Plugin

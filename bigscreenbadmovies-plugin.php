@@ -34,6 +34,11 @@ define( 'BSBM_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
 require_once BSBM_PLUGIN_PATH . 'includes/class-bsbm-plugin.php';
 
 /**
+ * Load the plugin update checker library.
+ */
+require_once BSBM_PLUGIN_PATH . 'includes/plugin-update-checker-5.5/plugin-update-checker.php';
+
+/**
  * Begins execution of the plugin.
  *
  * @since    1.0.0
