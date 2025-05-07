@@ -4,8 +4,8 @@
  * Plugin URI:        # Update with your plugin's URL if you have one
  * Description:       Integrates NocoDB movie data with WordPress. Creates an 'Experiment' CPT and a custom admin page for managing experiments and movies.
  * Version: 1.0.4
- * Author:            # Your Name Here
- * Author URI:        # Your Website URL
+ * Author:            # Zasderq/Dallensmith
+ * Author URI:        # https://bigscreenbadmovies.com
  * License:           GPL v2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       bsbm-integration
