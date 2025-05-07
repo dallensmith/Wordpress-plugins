@@ -142,7 +142,26 @@ if ( !class_exists(GitHubApi::class, false) ):
 				}
 
 				if ( !empty($release->body) ) {
-					$reference->changelog = Parsedown::instance()->text($release->body);
+					// Attempt to load the bundled Parsedown if not already fully available
+					$bundledParsedownPath = dirname(dirname(dirname(dirname(__FILE__)))) . '/vendor/Parsedown.php';
+					if ( file_exists($bundledParsedownPath) ) {
+						// Check if Parsedown class exists AND has the 'text' method.
+						// If not, or if it seems incomplete, try to load our bundled one.
+						if ( !class_exists('\\Parsedown', false) || !method_exists('\\Parsedown', 'text') ) {
+							require_once($bundledParsedownPath);
+						}
+					}
+
+					// Now, check again if Parsedown is usable
+					if ( class_exists('\\Parsedown', false) && method_exists('\\Parsedown', 'text') ) {
+						$pd = new \\Parsedown();
+						$reference->changelog = $pd->text($release->body);
+					} else {
+						//Fall back to a plain text version if Parsedown is not available or incomplete.
+						$reference->changelog = strip_tags($release->body);
+						// Optional: You could add an error_log here if you want to know when this fallback occurs.
+						// error_log('BSBM Plugin Update Checker: Parsedown class not available or incomplete. Falling back to strip_tags for release notes.');
+					}
 				}
 
 				return $reference;
