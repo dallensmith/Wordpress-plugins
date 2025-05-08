@@ -677,51 +677,54 @@ class BigScreenBadMovies_Plugin {
                 $message_text = '';
 
                 switch ( $_GET['message'] ) {
-                    // NocoDB -> WP messages
-                    case 'fetched_from_nocodb':
-                        $message_text = __( 'New experiments fetched from NocoDB and are awaiting review below.', 'bsbm-integration' );
-                        $message_type = 'updated';
-                        break;
-                    case 'imported_to_wp':
-                        $num_imported = isset($_GET['count']) ? absint($_GET['count']) : 0;
-                        $message_text = sprintf( _n( '%d experiment imported to WordPress successfully.', '%d experiments imported to WordPress successfully.', $num_imported, 'bsbm-integration' ), $num_imported );
-                        $message_type = 'updated';
-                        break;
-                    case 'nothing_to_import_to_wp':
-                        $message_text = __( 'No experiments were selected for import to WordPress.', 'bsbm-integration' );
-                        $message_type = 'warning';
-                        break;
                     case 'fetch_from_nocodb_error':
-                        $message_text = __( 'Could not fetch experiments from NocoDB. Check plugin settings and NocoDB connection.', 'bsbm-integration' );
                         $message_type = 'error';
+                        $message_text = __('Error fetching data from NocoDB. Please check settings and NocoDB availability.', 'bsbm-integration');
                         break;
                     case 'no_new_experiments_from_nocodb':
-                        $message_text = __( 'No new experiments found in NocoDB to import.', 'bsbm-integration' );
                         $message_type = 'info';
+                        $message_text = __('No new experiments found in NocoDB to import.', 'bsbm-integration');
+                        break;
+                    case 'fetched_from_nocodb': // Added this case based on handle_fetch_pending_experiments_from_nocodb
+                        $message_type = 'success';
+                        $message_text = __('Successfully fetched pending experiments from NocoDB. Review and select experiments to import below.', 'bsbm-integration');
+                        break;
+                    case 'imported_to_wp':
+                        $message_type = 'success';
+                        $count = isset($_GET['count']) ? intval($_GET['count']) : 0;
+                        $message_text = sprintf( _n( '%s experiment imported successfully to WordPress.', '%s experiments imported successfully to WordPress.', $count, 'bsbm-integration' ), $count );
+                        break;
+                    case 'nothing_to_import_to_wp':
+                        $message_type = 'warning';
+                        $message_text = __('No experiments were selected to import to WordPress.', 'bsbm-integration');
                         break;
                     
                     // WP -> NocoDB messages
                     case 'listed_for_nocodb_sync':
-                        $message_text = __( 'WordPress experiments needing sync to NocoDB are listed below.', 'bsbm-integration' );
-                        $message_type = 'updated';
+                        $message_type = 'success';
+                        $message_text = __('Found WordPress experiments that may need syncing to NocoDB. Review and select experiments to sync below.', 'bsbm-integration');
                         break;
                     case 'synced_to_nocodb':
-                        $num_synced = isset($_GET['count']) ? absint($_GET['count']) : 0;
-                        $message_text = sprintf( _n( '%d experiment synced to NocoDB successfully.', '%d experiments synced to NocoDB successfully.', $num_synced, 'bsbm-integration' ), $num_synced );
-                        $message_type = 'updated';
+                        $message_type = 'success';
+                        $count = isset($_GET['count']) ? intval($_GET['count']) : 0;
+                        $message_text = sprintf( _n( '%s WordPress experiment synced successfully to NocoDB.', '%s WordPress experiments synced successfully to NocoDB.', $count, 'bsbm-integration' ), $count );
                         break;
                     case 'nothing_to_sync_to_nocodb':
-                        $message_text = __( 'No WordPress experiments were selected for sync to NocoDB.', 'bsbm-integration' );
                         $message_type = 'warning';
+                        $message_text = __('No WordPress experiments were selected to sync to NocoDB.', 'bsbm-integration');
                         break;
                     case 'no_wp_experiments_to_sync':
-                         $message_text = __( 'No WordPress experiments currently need to be synced to NocoDB.', 'bsbm-integration' );
-                         $message_type = 'info';
+                        $message_type = 'info';
+                        $message_text = __('No WordPress experiments currently need to be synced to NocoDB.', 'bsbm-integration');
                         break;
                     case 'error_sync_to_nocodb':
-                        $num_failed = isset($_GET['failed_count']) ? absint($_GET['failed_count']) : 0;
-                         $message_text = sprintf( _n( 'Error syncing %d experiment to NocoDB. Check logs.', 'Error syncing %d experiments to NocoDB. Check logs.', $num_failed, 'bsbm-integration' ), $num_failed );
-                         $message_type = 'error';
+                        $message_type = 'error';
+                        $synced_count = isset($_GET['synced_count']) ? intval($_GET['synced_count']) : 0;
+                        $failed_count = isset($_GET['failed_count']) ? intval($_GET['failed_count']) : 0;
+                        $message_text = sprintf( __('Sync to NocoDB complete. %s succeeded, %s failed. Check error logs for details on failures.', 'bsbm-integration'), $synced_count, $failed_count);
+                        if ($failed_count === 0 && $synced_count === 0) { // Should not happen if this message is used
+                            $message_text = __('An unspecified error occurred during sync to NocoDB.', 'bsbm-integration');
+                        }
                         break;
                 }
                 if ( !empty($message_text) ) {
