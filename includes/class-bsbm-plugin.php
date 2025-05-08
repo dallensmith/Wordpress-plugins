@@ -395,10 +395,187 @@ class BigScreenBadMovies_Plugin {
     }
 
     // --- REST API Callbacks ---
-	public function register_rest_routes() { /* ... Same as before ... */ }
-	public function rest_permission_check( WP_REST_Request $request ) { /* ... Same as before ... */ }
-	public function handle_tmdb_search_request( WP_REST_Request $request ) { /* ... Same as before ... */ }
-	public function handle_tmdb_details_request( WP_REST_Request $request ) { /* ... Same as before ... */ }
+	public function register_rest_routes() {
+		register_rest_route( 'bsbm/v1', '/tmdb/search', array(
+			'methods'             => WP_REST_Server::READABLE, // GET requests
+			'callback'            => array( $this, 'handle_tmdb_search_request' ),
+			'permission_callback' => array( $this, 'rest_permission_check' ),
+			'args'                => array(
+				'query' => array(
+					'required'          => true,
+					'type'              => 'string',
+					'description'       => esc_html__( 'Search query for TMDb.', 'bsbm-integration' ),
+					'sanitize_callback' => 'sanitize_text_field',
+				),
+				'year' => array(
+					'required'          => false,
+					'type'              => 'integer',
+					'description'       => esc_html__( 'Optional year to filter search results.', 'bsbm-integration' ),
+					'sanitize_callback' => 'absint',
+				),
+			),
+		) );
+
+		register_rest_route( 'bsbm/v1', '/tmdb/details/(?P<tmdb_id>\d+)', array(
+			'methods'             => WP_REST_Server::READABLE, // GET requests
+			'callback'            => array( $this, 'handle_tmdb_details_request' ),
+			'permission_callback' => array( $this, 'rest_permission_check' ),
+			'args'                => array(
+				'tmdb_id' => array(
+					'required'          => true,
+					'type'              => 'integer',
+					'description'       => esc_html__( 'TMDb Movie ID.', 'bsbm-integration' ),
+					'validate_callback' => function( $param, $request, $key ) {
+						return is_numeric( $param ) && $param > 0;
+					},
+					'sanitize_callback' => 'absint',
+				),
+			),
+		) );
+	}
+
+	public function rest_permission_check( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'edit_posts' ) ) {
+			return new WP_Error( 'rest_forbidden', esc_html__( 'You do not have permissions to perform this action.', 'bsbm-integration' ), array( 'status' => 401 ) );
+		}
+		return true;
+	}
+
+	public function handle_tmdb_search_request( WP_REST_Request $request ) {
+		$query = $request->get_param( 'query' );
+		$year  = $request->get_param( 'year' ); // Optional
+
+		$options = $this->get_plugin_options();
+		$api_key = $options['tmdb_api_key'] ?? '';
+
+		if ( empty( $api_key ) ) {
+			return new WP_Error( 'api_key_missing', esc_html__( 'TMDb API key is not set in plugin settings.', 'bsbm-integration' ), array( 'status' => 500 ) );
+		}
+
+		$search_url = add_query_arg( array(
+			'api_key' => $api_key,
+			'query'   => urlencode( $query ),
+			'language' => 'en-US',
+			'page'    => 1,
+			'include_adult' => 'false',
+		), $this->tmdb_api_base_url . '/search/movie' );
+
+		if ( ! empty( $year ) ) {
+			$search_url = add_query_arg( 'primary_release_year', $year, $search_url );
+		}
+
+		$response = wp_remote_get( $search_url, array( 'timeout' => 15 ) );
+
+		if ( is_wp_error( $response ) ) {
+			error_log('BSBM TMDb Search Error: ' . $response->get_error_message());
+			return new WP_Error( 'tmdb_request_failed', esc_html__( 'Failed to connect to TMDb.', 'bsbm-integration' ), array( 'status' => 500 ) );
+		}
+
+		$body = wp_remote_retrieve_body( $response );
+		$data = json_decode( $body, true );
+
+		if ( wp_remote_retrieve_response_code( $response ) !== 200 || ! isset( $data['results'] ) ) {
+			$error_message = isset($data['status_message']) ? $data['status_message'] : esc_html__( 'Invalid response from TMDb.', 'bsbm-integration' );
+			error_log('BSBM TMDb Search Error: ' . $error_message . ' (Code: ' . wp_remote_retrieve_response_code( $response ) . ')');
+			return new WP_Error( 'tmdb_error', $error_message, array( 'status' => wp_remote_retrieve_response_code( $response ) ) );
+		}
+
+		// Simplify results for the frontend
+		$simplified_results = array();
+		foreach ( $data['results'] as $movie ) {
+			$simplified_results[] = array(
+				'id'           => $movie['id'],
+				'title'        => $movie['title'],
+				'release_date' => $movie['release_date'],
+				'poster_path'  => !empty($movie['poster_path']) ? 'https://image.tmdb.org/t/p/w92' . $movie['poster_path'] : '', // Smaller poster for search results
+			);
+		}
+		return new WP_REST_Response( $simplified_results, 200 );
+	}
+
+	public function handle_tmdb_details_request( WP_REST_Request $request ) {
+		$tmdb_id = $request->get_param( 'tmdb_id' );
+
+		$options = $this->get_plugin_options();
+		$api_key = $options['tmdb_api_key'] ?? '';
+
+		if ( empty( $api_key ) ) {
+			return new WP_Error( 'api_key_missing', esc_html__( 'TMDb API key is not set in plugin settings.', 'bsbm-integration' ), array( 'status' => 500 ) );
+		}
+
+		$details_url = add_query_arg( array(
+			'api_key' => $api_key,
+			'language' => 'en-US',
+			'append_to_response' => 'credits,videos,release_dates', // Get cast, director, trailers, and release year
+		), $this->tmdb_api_base_url . '/movie/' . $tmdb_id );
+
+		$response = wp_remote_get( $details_url, array( 'timeout' => 15 ) );
+
+		if ( is_wp_error( $response ) ) {
+			error_log('BSBM TMDb Details Error: ' . $response->get_error_message());
+			return new WP_Error( 'tmdb_request_failed', esc_html__( 'Failed to connect to TMDb for details.', 'bsbm-integration' ), array( 'status' => 500 ) );
+		}
+
+		$body = wp_remote_retrieve_body( $response );
+		$data = json_decode( $body, true );
+
+		if ( wp_remote_retrieve_response_code( $response ) !== 200 || empty( $data ) ) {
+			$error_message = isset($data['status_message']) ? $data['status_message'] : esc_html__( 'Invalid response from TMDb for details.', 'bsbm-integration' );
+			error_log('BSBM TMDb Details Error: ' . $error_message . ' (Code: ' . wp_remote_retrieve_response_code( $response ) . ')');
+			return new WP_Error( 'tmdb_error', $error_message, array( 'status' => wp_remote_retrieve_response_code( $response ) ) );
+		}
+
+		// Extract and format details
+		$director = '';
+		if ( ! empty( $data['credits']['crew'] ) ) {
+			foreach ( $data['credits']['crew'] as $crew_member ) {
+				if ( $crew_member['job'] === 'Director' ) {
+					$director = $crew_member['name'];
+					break;
+				}
+			}
+		}
+
+		$cast_list = array();
+		if ( ! empty( $data['credits']['cast'] ) ) {
+			$count = 0;
+			foreach ( $data['credits']['cast'] as $cast_member ) {
+				$cast_list[] = $cast_member['name'];
+				$count++;
+				if ( $count >= 10 ) break; // Limit cast members
+			}
+		}
+
+		$trailer_url = '';
+		if ( ! empty( $data['videos']['results'] ) ) {
+			foreach ( $data['videos']['results'] as $video ) {
+				if ( strtolower( $video['type'] ) === 'trailer' && strtolower( $video['site'] ) === 'youtube' ) {
+					$trailer_url = 'https://www.youtube.com/watch?v=' . $video['key'];
+					break;
+				}
+			}
+		}
+		
+		$year = !empty($data['release_date']) ? substr($data['release_date'], 0, 4) : '';
+
+		$details = array(
+			'tmdb_id'      => $data['id'],
+			'title'        => $data['title'],
+			'year'         => $year,
+			'overview'     => $data['overview'],
+			'poster_url'   => !empty($data['poster_path']) ? 'https://image.tmdb.org/t/p/w342' . $data['poster_path'] : '',
+			'director'     => $director,
+			'cast'         => implode(', ', $cast_list),
+			'genres'       => implode(', ', array_column( $data['genres'] ?? [], 'name' ) ),
+			'rating'       => $data['vote_average'] ? round($data['vote_average'], 1) : '',
+			'runtime'      => $data['runtime'],
+			'imdb_id'      => $data['imdb_id'],
+			'trailer_url'  => $trailer_url,
+			// Add other fields as needed from $data, e.g., tagline, budget, revenue
+		);
+
+		return new WP_REST_Response( $details, 200 );
+	}
 
     // --- NocoDB Helper ---
     private function find_existing_nocodb_record( $exp_num, $tmdb_id, $api_base_url, $api_token ) { /* ... Same as before ... */ }
