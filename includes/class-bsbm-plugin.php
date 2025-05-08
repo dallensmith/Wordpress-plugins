@@ -570,7 +570,7 @@ class BigScreenBadMovies_Plugin {
 	public function get_version() { return $this->version; }
 
 	public function run() {
-		$this->maybe_init_updater(); // Initialize updater here
+		// $this->maybe_init_updater(); // Temporarily commented out to deal with PucReadmeParser error
 		/* ... any other run logic ... */
 	}
 
@@ -943,8 +943,8 @@ class BigScreenBadMovies_Plugin {
         $pending_experiments = array();
         foreach ( $nocodb_experiments as $exp_data ) {
             $nocodb_id = strval($exp_data['Id'] ?? ($exp_data['id'] ?? null));
-            $title = $exp_data['ExperimentTitle'] ?? ($exp_data['Title'] ?? 'Untitled Experiment'); // Placeholder, user will provide correct keys
-            $event_date_str = $exp_data['EventDate'] ?? ($exp_data['Date'] ?? null); // Placeholder
+            $title = $exp_data['movie_title'] ?? 'Untitled Experiment';       // Use 'movie_title'
+            $event_date_str = $exp_data['event_date'] ?? null;                // Use 'event_date'
 
             if ( empty($nocodb_id) ) continue;
 
@@ -1006,12 +1006,11 @@ class BigScreenBadMovies_Plugin {
 
                 // --- Prepare Post Data ---
                 // IMPORTANT: Adjust field names from $nocodb_data to match your NocoDB column names
-                $post_title = $nocodb_data['experiment_title_override'] ?? // Specific title from NocoDB
-                              ($nocodb_data['Title'] ?? // Generic "Title" field
+                $post_title = $nocodb_data['movie_title'] ?? // Use NocoDB movie_title
                               ($nocodb_data['experiment_number'] ? "Experiment #" . $nocodb_data['experiment_number'] : // Fallback to experiment number
-                              'Untitled Experiment from NocoDB ' . $exp_to_import['id_from_nocodb'])); // Absolute fallback
+                              ('Untitled Experiment from NocoDB ' . ($exp_to_import['id_from_nocodb'] ?? 'UnknownID'))); // Absolute fallback
 
-                $post_content = $nocodb_data['event_notes_override'] ?? ($nocodb_data['Notes'] ?? ''); 
+                $post_content = $nocodb_data['movie_overview'] ?? ($nocodb_data['event_notes'] ?? ''); // Use movie_overview or event_notes for content
                 $event_date_str = $exp_to_import['event_date'] ?? ($nocodb_data['event_date'] ?? null);
                 
                 $event_timestamp = false;
@@ -1059,53 +1058,52 @@ class BigScreenBadMovies_Plugin {
                     '_bsbm_nocodb_id' => $exp_to_import['id_from_nocodb'], // Store NocoDB's own record ID
                     '_bsbm_experiment_number' => $nocodb_data['experiment_number'] ?? null,
                     '_bsbm_event_host' => $nocodb_data['event_host'] ?? null,
-                    '_bsbm_event_notes' => $nocodb_data['event_notes_override'] ?? ($nocodb_data['event_notes'] ?? null),
-                    // Add other direct meta fields from $nocodb_data
+                    '_bsbm_event_notes' => $nocodb_data['event_notes'] ?? null, // Specific event notes
+                    '_bsbm_post_url_from_nocodb' => $nocodb_data['post_url'] ?? null, // If you have post_url from NocoDB
+                    '_bsbm_event_location_from_nocodb' => $nocodb_data['event_location'] ?? null,
                 );
 
                 // If NocoDB stores movies as a JSON string in a field (e.g., 'movies_json')
                 $movies_for_sync_meta = array();
-                if (!empty($nocodb_data['movies_json']) && is_string($nocodb_data['movies_json'])) {
-                    $decoded_movies = json_decode($nocodb_data['movies_json'], true);
-                    if (is_array($decoded_movies)) {
-                        foreach($decoded_movies as $movie_item) {
-                             $movies_for_sync_meta[] = [
-                                'movie_tmdb_id' => absint($movie_item['tmdb_id'] ?? $movie_item['movie_tmdb_id'] ?? 0),
-                                'movie_title' => sanitize_text_field($movie_item['movie_title_override'] ?? $movie_item['movie_title'] ?? ''),
-                                // ... map all other relevant movie fields for the _bsbm_movies_data_for_nocodb_sync structure
-                                'movie_year' => absint($movie_item['year'] ?? 0),
-                                'movie_overview' => sanitize_textarea_field($movie_item['overview_override'] ?? $movie_item['movie_overview'] ?? ''),
-                                'movie_poster_url' => esc_url_raw($movie_item['custom_movie_poster_url'] ?? $movie_item['movie_poster_url'] ?? ''),
-                                'movie_director' => sanitize_text_field($movie_item['director_override'] ?? $movie_item['movie_director'] ?? ''),
-                                'movie_cast' => sanitize_text_field($movie_item['cast_override'] ?? $movie_item['movie_cast'] ?? ''),
-                                'movie_genres' => sanitize_text_field($movie_item['genres_override'] ?? $movie_item['movie_genres'] ?? ''),
-                                'movie_tmdb_rating' => !empty($movie_item['our_rating']) ? floatval($movie_item['our_rating']) : (!empty($movie_item['movie_tmdb_rating']) ? floatval($movie_item['movie_tmdb_rating']) : null),
-                                'movie_trailer_url' => esc_url_raw($movie_item['trailer_override_url'] ?? $movie_item['movie_trailer_url'] ?? ''),
-                                'movie_imdb_id' => sanitize_text_field($movie_item['imdb_id_override'] ?? $movie_item['movie_imdb_id'] ?? ''),
-                                'movie_runtime' => !empty($movie_item['runtime_override']) ? absint($movie_item['runtime_override']) : (!empty($movie_item['movie_runtime']) ? absint($movie_item['movie_runtime']) : null),
-                                'affiliate_links' => $this->parse_affiliate_links_from_nocodb($movie_item['affiliate_links_override'] ?? ''),
-                            ];
-                        }
-                    }
-                } elseif (isset($nocodb_data['tmdb_id'])) { // If the NocoDB row itself represents a single movie for an experiment
-                    $movies_for_sync_meta[] = [
-                        'movie_tmdb_id' => absint($nocodb_data['tmdb_id'] ?? 0),
-                        'movie_title' => sanitize_text_field($nocodb_data['movie_title_override'] ?? ''),
-                        'movie_year' => absint($nocodb_data['year'] ?? 0),
-                        'movie_overview' => sanitize_textarea_field($nocodb_data['overview_override'] ?? ''),
-                        'movie_poster_url' => esc_url_raw($nocodb_data['custom_movie_poster_url'] ?? ''),
-                        'movie_director' => sanitize_text_field($nocodb_data['director_override'] ?? ''),
-                        'movie_cast' => sanitize_text_field($nocodb_data['cast_override'] ?? ''),
-                        'movie_genres' => sanitize_text_field($nocodb_data['genres_override'] ?? ''),
-                        'movie_tmdb_rating' => !empty($nocodb_data['our_rating']) ? floatval($nocodb_data['our_rating']) : null,
-                        'movie_trailer_url' => esc_url_raw($nocodb_data['trailer_override_url'] ?? ''),
-                        'movie_imdb_id' => sanitize_text_field($nocodb_data['imdb_id_override'] ?? ''),
-                        'movie_runtime' => !empty($nocodb_data['runtime_override']) ? absint($nocodb_data['runtime_override']) : null,
-                        'affiliate_links' => $this->parse_affiliate_links_from_nocodb($nocodb_data['affiliate_links_override'] ?? ''),
-                         // movie_notes from NocoDB can be stored in a specific meta for this movie if needed
-                        '_movie_notes_from_nocodb' => sanitize_textarea_field($nocodb_data['movie_notes'] ?? ''),
-                    ];
-                }
+                // Assuming each NocoDB row IS a movie, and we want to populate the sync meta for this single movie.
+                // The structure of _bsbm_movies_data_for_nocodb_sync should be an array of movie arrays.
+                // So, we create an array containing one movie, mapped from $nocodb_data.
+                
+                $current_movie_data_for_sync = [
+                    'movie_tmdb_id' => absint($nocodb_data['movie_tmdb_id'] ?? 0),
+                    'movie_title' => sanitize_text_field($nocodb_data['movie_title'] ?? ''),
+                    'movie_year' => absint($nocodb_data['movie_year'] ?? 0),
+                    'movie_overview' => sanitize_textarea_field($nocodb_data['movie_overview'] ?? ''),
+                    'movie_poster_url' => esc_url_raw($nocodb_data['movie_poster'] ?? ''), // NocoDB key 'movie_poster'
+                    'movie_director' => sanitize_text_field($nocodb_data['movie_director'] ?? ''),
+                    'movie_cast' => sanitize_text_field($nocodb_data['movie_actors'] ?? ''), // NocoDB key 'movie_actors'
+                    'movie_genres' => sanitize_text_field($nocodb_data['movie_genres'] ?? ''),
+                    'movie_tmdb_rating' => !empty($nocodb_data['movie_tmdb_rating']) ? floatval($nocodb_data['movie_tmdb_rating']) : null,
+                    'movie_trailer_url' => esc_url_raw($nocodb_data['movie_trailer'] ?? ''), // NocoDB key 'movie_trailer'
+                    'movie_imdb_id' => sanitize_text_field($nocodb_data['movie_imdb_id'] ?? ''),
+                    'movie_runtime' => !empty($nocodb_data['movie_runtime']) ? absint($nocodb_data['movie_runtime']) : null,
+                    'affiliate_links' => $this->parse_affiliate_links_from_nocodb($nocodb_data['affiliate_links_override'] ?? ''), // Assuming this field might exist or be added
+                    // Add other fields from NocoDB to this structure as needed
+                    'movie_original_title' => sanitize_text_field($nocodb_data['movie_original_title'] ?? ''),
+                    'movie_release_date' => sanitize_text_field($nocodb_data['movie_release_date'] ?? ''),
+                    'movie_tagline' => sanitize_text_field($nocodb_data['movie_tagline'] ?? ''),
+                    'movie_content_rating' => sanitize_text_field($nocodb_data['movie_content_rating'] ?? ''),
+                    'movie_writers' => sanitize_text_field($nocodb_data['movie_writers'] ?? ''),
+                    'movie_studio' => sanitize_text_field($nocodb_data['movie_studio'] ?? ''),
+                    'movie_country' => sanitize_text_field($nocodb_data['movie_country'] ?? ''),
+                    'movie_language' => sanitize_text_field($nocodb_data['movie_language'] ?? ''),
+                    'movie_budget' => !empty($nocodb_data['movie_budget']) ? floatval($nocodb_data['movie_budget']) : null,
+                    'movie_box_office' => !empty($nocodb_data['movie_box_office']) ? floatval($nocodb_data['movie_box_office']) : null,
+                    'movie_backdrop_url' => esc_url_raw($nocodb_data['movie_backdrop'] ?? ''), // NocoDB key 'movie_backdrop'
+                    'movie_tmdb_votes' => !empty($nocodb_data['movie_tmdb_votes']) ? intval($nocodb_data['movie_tmdb_votes']) : null,
+                    'movie_imdb_rating' => !empty($nocodb_data['movie_imdb_rating']) ? floatval($nocodb_data['movie_imdb_rating']) : null,
+                    'movie_imdb_votes' => !empty($nocodb_data['movie_imdb_votes']) ? intval($nocodb_data['movie_imdb_votes']) : null,
+                    'movie_tmdb_url' => esc_url_raw($nocodb_data['movie_tmdb_url'] ?? ''),
+                    'movie_imdb_url' => esc_url_raw($nocodb_data['movie_imdb_url'] ?? ''),
+                ];
+                $movies_for_sync_meta[] = array_filter($current_movie_data_for_sync, function($value) { return $value !== null && $value !== ''; });
+
+
                 if (!empty($movies_for_sync_meta)) {
                     $meta_input['_bsbm_movies_data_for_nocodb_sync'] = $movies_for_sync_meta;
                 }
@@ -1295,10 +1293,24 @@ class BigScreenBadMovies_Plugin {
     }
 
     // Placeholder for admin scripts/styles enqueue to prevent fatal error
-    public function enqueue_admin_form_assets() {
-        // Example: Enqueue admin CSS/JS here if needed
-        // wp_enqueue_style('bsbm-admin-style', plugins_url('admin/css/bsbm-admin.css', __FILE__));
-        // wp_enqueue_script('bsbm-admin-script', plugins_url('admin/js/bsbm-admin-form.js', __FILE__), array('jquery'), null, true);
+    public function enqueue_admin_form_assets($hook_suffix) {
+        // Only load on our specific admin pages
+        $screen = get_current_screen();
+        if (strpos($screen->id, 'bsbm-add-experiment-form') !== false || strpos($screen->id, 'bsbm-sync-hub') !== false ) {
+            // Assuming BSBM_PLUGIN_URL is defined in your main plugin file correctly
+            if (defined('BSBM_PLUGIN_URL')) {
+                 wp_enqueue_script('bsbm-admin-form-script', BSBM_PLUGIN_URL . 'admin/js/bsbm-admin-form.js', array('jquery', 'wp-util'), BSBM_PLUGIN_VERSION, true);
+                 wp_localize_script('bsbm-admin-form-script', 'bsbm_admin_params', array(
+                    'ajax_url' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('bsbm_admin_nonce'), // Example nonce
+                    'text_add_movie' => __('+ Add Movie', 'bsbm-integration'),
+                    'text_remove_movie' => __('Remove', 'bsbm-integration'),
+                    'text_movie_title_placeholder' => __('Movie', 'bsbm-integration'),
+                    'tmdb_api_key' => $this->get_plugin_options()['tmdb_api_key'] ?? '',
+                    'tmdb_base_url' => $this->tmdb_api_base_url,
+                 ));
+            }
+        }
     }
 
 } // End class BigScreenBadMovies_Plugin
