@@ -1168,4 +1168,9 @@ class BigScreenBadMovies_Plugin {
         return $links;
     }
 
+    // --- REST API Endpoints ---
+    public function register_rest_routes() {
+        // Register custom REST API routes here
+    }
+
 } // End class BigScreenBadMovies_Plugin
