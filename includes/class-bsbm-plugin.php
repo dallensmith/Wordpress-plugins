@@ -1296,18 +1296,33 @@ class BigScreenBadMovies_Plugin {
     public function enqueue_admin_form_assets($hook_suffix) {
         // Only load on our specific admin pages
         $screen = get_current_screen();
-        if (strpos($screen->id, 'bsbm-add-experiment-form') !== false || strpos($screen->id, 'bsbm-sync-hub') !== false ) {
+        // Check if $screen is null before accessing its properties
+        if ($screen && (strpos($screen->id, 'bsbm-add-experiment-form') !== false || strpos($screen->id, 'bsbm-sync-hub') !== false) ) {
             // Assuming BSBM_PLUGIN_URL is defined in your main plugin file correctly
             if (defined('BSBM_PLUGIN_URL')) {
-                 wp_enqueue_script('bsbm-admin-form-script', BSBM_PLUGIN_URL . 'admin/js/bsbm-admin-form.js', array('jquery', 'wp-util'), BSBM_PLUGIN_VERSION, true);
-                 wp_localize_script('bsbm-admin-form-script', 'bsbm_admin_params', array(
+                 wp_enqueue_script('bsbm-admin-form-script', BSBM_PLUGIN_URL . 'admin/js/bsbm-admin-form.js', array('jquery', 'wp-util', 'media-editor'), BSBM_PLUGIN_VERSION, true); // Added 'media-editor', ensured 'wp-util'
+                 
+                 $rest_url = get_rest_url(null, 'bsbm/v1/'); 
+                 $nonce = wp_create_nonce('wp_rest');
+
+                 wp_localize_script('bsbm-admin-form-script', 'bsbmAdminData', array( // CORRECTED to bsbmAdminData
                     'ajax_url' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('bsbm_admin_nonce'), // Example nonce
+                    'nonce' => $nonce, 
+                    'rest_url' => $rest_url, 
                     'text_add_movie' => __('+ Add Movie', 'bsbm-integration'),
                     'text_remove_movie' => __('Remove', 'bsbm-integration'),
                     'text_movie_title_placeholder' => __('Movie', 'bsbm-integration'),
                     'tmdb_api_key' => $this->get_plugin_options()['tmdb_api_key'] ?? '',
                     'tmdb_base_url' => $this->tmdb_api_base_url,
+                    'pageNow' => $screen->id, 
+                    'text' => [ 
+                        'no_results' => __('No results found.', 'bsbm-integration'),
+                        'error_fetching' => __('Error fetching results.', 'bsbm-integration'),
+                        'error_details' => __('Error: Invalid movie details received.', 'bsbm-integration'),
+                        'platform_name' => __('Platform Name', 'bsbm-integration'),
+                        'affiliate_url' => __('Affiliate URL', 'bsbm-integration'),
+                        'remove_link' => __('Remove Link', 'bsbm-integration'),
+                    ]
                  ));
             }
         }
