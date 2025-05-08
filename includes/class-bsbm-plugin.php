@@ -606,6 +606,55 @@ class BigScreenBadMovies_Plugin {
 
 	// The old init_updater() method is now removed as its logic is in maybe_init_updater()
 
+    private function fetch_nocodb_record_by_id($record_id) {
+        $options = $this->get_plugin_options();
+        $nocodb_url = trailingslashit( $options['nocodb_url'] ?? '' );
+        $project_id = $options['nocodb_project_id'] ?? '';
+        $table_name = $options['nocodb_table_id'] ?? '';
+        $token = $options['nocodb_token'] ?? '';
+
+        if ( empty( $nocodb_url ) || empty( $project_id ) || empty( $table_name ) || empty( $token ) || empty($record_id) ) {
+            error_log('BSBM DEBUG: NocoDB settings or record ID incomplete for fetching single record by ID.');
+            return null;
+        }
+
+        // NocoDB API URL for fetching a single record by its ID
+        $api_url = sprintf(
+            '%sapi/v1/db/data/v1/%s/%s/%s',
+            rtrim($nocodb_url, '/'), // Ensure no double slash if $nocodb_url has it
+            $project_id,
+            $table_name,
+            rawurlencode($record_id) // Ensure record ID is URL encoded if it contains special characters
+        );
+        error_log('BSBM DEBUG: Fetching NocoDB record by ID. API URL: ' . $api_url);
+
+        $response = wp_remote_get( $api_url, array(
+            'headers' => array( 'xc-token' => $token ),
+            'timeout' => 15,
+        ) );
+
+        if ( is_wp_error( $response ) ) {
+            error_log('BSBM DEBUG: fetch_nocodb_record_by_id WP_Error: ' . $response->get_error_message());
+            return null;
+        }
+        
+        $response_code = wp_remote_retrieve_response_code( $response );
+        $body = wp_remote_retrieve_body( $response );
+
+        if ( $response_code !== 200 ) {
+            error_log('BSBM DEBUG: fetch_nocodb_record_by_id Non-200 response. Code: ' . $response_code . ' Body: ' . substr($body, 0, 500));
+            return null;
+        }
+        
+        $data = json_decode( $body, true );
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('BSBM DEBUG: fetch_nocodb_record_by_id JSON decode error: ' . json_last_error_msg() . '. Body was: ' . substr($body, 0, 500));
+            return null;
+        }
+        return $data; // This should be the single record object/array
+    }
+
     // --- New Sync Experiments Page ---
     // Renamed from render_sync_experiments_page to render_sync_hub_page
     public function render_sync_hub_page() {
@@ -878,10 +927,9 @@ class BigScreenBadMovies_Plugin {
         $nocodb_experiments = isset($data['list']) && is_array($data['list']) ? $data['list'] : [];
         error_log('BSBM DEBUG: Count of experiments from NocoDB list: ' . count($nocodb_experiments));
 
-        if ( empty( $nocodb_experiments ) ) {
-            error_log('BSBM DEBUG: No new experiments found in NocoDB. Redirecting.');
-            wp_redirect( add_query_arg( 'message', 'no_new_experiments_from_nocodb', menu_page_url( 'bsbm-sync-hub', false ) ) );
-            exit;
+        if ( !empty($nocodb_experiments) ) {
+            $first_record_keys = array_keys($nocodb_experiments[0]);
+            error_log('BSBM DEBUG: Keys of the first NocoDB record: ' . implode(', ', $first_record_keys)); 
         }
 
         global $wpdb;
@@ -895,8 +943,8 @@ class BigScreenBadMovies_Plugin {
         $pending_experiments = array();
         foreach ( $nocodb_experiments as $exp_data ) {
             $nocodb_id = strval($exp_data['Id'] ?? ($exp_data['id'] ?? null));
-            $title = $exp_data['ExperimentTitle'] ?? ($exp_data['Title'] ?? 'Untitled Experiment');
-            $event_date_str = $exp_data['EventDate'] ?? ($exp_data['Date'] ?? null);
+            $title = $exp_data['ExperimentTitle'] ?? ($exp_data['Title'] ?? 'Untitled Experiment'); // Placeholder, user will provide correct keys
+            $event_date_str = $exp_data['EventDate'] ?? ($exp_data['Date'] ?? null); // Placeholder
 
             if ( empty($nocodb_id) ) continue;
 
@@ -904,15 +952,15 @@ class BigScreenBadMovies_Plugin {
                 $pending_experiments[] = array(
                     'id_from_nocodb' => $nocodb_id,
                     'title' => $title,
-                    'event_date' => $event_date_str,
-                    'full_data' => $exp_data 
+                    'event_date' => $event_date_str
+                    // 'full_data' => $exp_data // Intentionally removed
                 );
             }
         }
-        error_log('BSBM DEBUG: Found ' . count($pending_experiments) . ' pending experiments to import.');
+        error_log('BSBM DEBUG: Found ' . count($pending_experiments) . ' pending experiments to list (summary only).');
 
         if ( empty( $pending_experiments ) ) {
-            error_log('BSBM DEBUG: No new experiments to import after filtering. Redirecting.');
+            error_log('BSBM DEBUG: No new experiments found in NocoDB. Redirecting.');
             wp_redirect( add_query_arg( 'message', 'no_new_experiments_from_nocodb', menu_page_url( 'bsbm-sync-hub', false ) ) );
             exit;
         }
@@ -949,7 +997,12 @@ class BigScreenBadMovies_Plugin {
 
         foreach ( $all_pending_experiments as $key => $exp_to_import ) {
             if ( in_array( strval($exp_to_import['id_from_nocodb']), $selected_ids ) ) {
-                $nocodb_data = $exp_to_import['full_data']; 
+                $nocodb_data = $this->fetch_nocodb_record_by_id($exp_to_import['id_from_nocodb']); // Fetch full data by ID
+
+                if (empty($nocodb_data)) {
+                    error_log("BSBM Import: Failed to fetch full data for NocoDB ID: " . $exp_to_import['id_from_nocodb']);
+                    continue;
+                }
 
                 // --- Prepare Post Data ---
                 // IMPORTANT: Adjust field names from $nocodb_data to match your NocoDB column names
