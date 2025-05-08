@@ -418,7 +418,54 @@ class BigScreenBadMovies_Plugin {
     }
 
     // --- NocoDB Helper ---
-    private function find_existing_nocodb_record( $exp_num, $tmdb_id, $api_base_url, $api_token ) { /* ... Same as before ... */ }
+    private function find_existing_nocodb_record( $exp_num, $tmdb_id, $api_base_url, $api_token ) {
+        // Construct the query URL for NocoDB API
+        // This assumes your NocoDB table has columns named 'experiment_number' and 'movie_tmdb_id'
+        // Adjust column names if they are different in your NocoDB table.
+        $query_filter = sprintf("(experiment_number,eq,%d)~and(movie_tmdb_id,eq,%d)", $exp_num, $tmdb_id);
+        $request_url = sprintf('%s/records?where=%s&limit=1',
+            rtrim($api_base_url, '/'),
+            rawurlencode($query_filter) // Ensure the filter string is URL encoded
+        );
+
+        $args = [
+            'method'  => 'GET',
+            'headers' => [
+                'xc-token'     => $api_token,
+                'Content-Type' => 'application/json; charset=utf-8'
+            ],
+            'timeout' => 15,
+        ];
+
+        $response = wp_remote_request( $request_url, $args );
+
+        if ( is_wp_error( $response ) ) {
+            error_log( "BSBM Plugin: Error finding NocoDB record (exp_num: {$exp_num}, tmdb_id: {$tmdb_id}). WP_Error: " . $response->get_error_message() );
+            return null;
+        }
+
+        $response_code = wp_remote_retrieve_response_code( $response );
+        $response_body = wp_remote_retrieve_body( $response );
+
+        if ( $response_code !== 200 ) {
+            error_log( "BSBM Plugin: Error finding NocoDB record (exp_num: {$exp_num}, tmdb_id: {$tmdb_id}). Status: {$response_code}. Body: " . $response_body );
+            return null;
+        }
+
+        $data = json_decode( $response_body, true );
+
+        // NocoDB API v1/v2 typically returns records under a "list" key.
+        // If your NocoDB API version or specific table view returns data differently, this may need adjustment.
+        if ( isset($data['list']) && is_array($data['list']) && !empty($data['list']) ) {
+            // Assuming the record ID field in NocoDB is 'Id' (case-sensitive)
+            if ( isset( $data['list'][0]['Id'] ) ) {
+                return $data['list'][0]['Id'];
+            }
+        }
+        
+        // No record found or unexpected response structure
+        return null;
+    }
 
     // --- Method to Sync a Single WP Experiment to NocoDB ---
     public function sync_wp_experiment_to_nocodb( $post_id ) {
@@ -762,6 +809,7 @@ class BigScreenBadMovies_Plugin {
 
     // Renamed from handle_fetch_pending_experiments to align with new structure
     public function handle_fetch_pending_experiments_from_nocodb() {
+        error_log('BSBM DEBUG: Attempting to enter handle_fetch_pending_experiments_from_nocodb'); // DEBUG LINE
         if ( ! isset( $_POST['bsbm_fetch_nocodb_nonce'] ) || ! wp_verify_nonce( $_POST['bsbm_fetch_nocodb_nonce'], 'bsbm_fetch_pending_experiments_from_nocodb_nonce' ) ) {
             wp_die( __( 'Security check failed.', 'bsbm-integration' ) );
         }
@@ -1043,6 +1091,7 @@ class BigScreenBadMovies_Plugin {
 
     // --- WP to NocoDB Sync Handlers ---
     public function handle_list_wp_experiments_for_sync() {
+        error_log('BSBM DEBUG: Attempting to enter handle_list_wp_experiments_for_sync'); // DEBUG LINE
         if ( ! isset( $_POST['bsbm_list_wp_nonce'] ) || ! wp_verify_nonce( $_POST['bsbm_list_wp_nonce'], 'bsbm_list_wp_experiments_for_sync_nonce' ) ) {
             wp_die( __( 'Security check failed.', 'bsbm-integration' ) );
         }
