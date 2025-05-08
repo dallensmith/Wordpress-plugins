@@ -608,25 +608,28 @@ class BigScreenBadMovies_Plugin {
 
     private function fetch_nocodb_record_by_id($record_id) {
         $options = $this->get_plugin_options();
-        $nocodb_url = trailingslashit( $options['nocodb_url'] ?? '' );
+        $nocodb_url_setting = $options['nocodb_url'] ?? '';
         $project_id = $options['nocodb_project_id'] ?? '';
         $table_name = $options['nocodb_table_id'] ?? '';
         $token = $options['nocodb_token'] ?? '';
 
-        if ( empty( $nocodb_url ) || empty( $project_id ) || empty( $table_name ) || empty( $token ) || empty($record_id) ) {
+        if ( empty( $nocodb_url_setting ) || empty( $project_id ) || empty( $table_name ) || empty( $token ) || empty($record_id) ) {
             error_log('BSBM DEBUG: NocoDB settings or record ID incomplete for fetching single record by ID.');
             return null;
         }
 
-        // NocoDB API URL for fetching a single record by its ID
+        // Ensure the base URL is correctly formed (e.g., https://example.com) and then append the API path.
+        $base_url = rtrim($nocodb_url_setting, '/'); 
+
         $api_url = sprintf(
-            '%sapi/v1/db/data/v1/%s/%s/%s',
-            rtrim($nocodb_url, '/'), // Ensure no double slash if $nocodb_url has it
+            '%s/api/v1/db/data/v1/%s/%s/%s', // Ensures a slash before 'api'
+            $base_url,
             $project_id,
             $table_name,
-            rawurlencode($record_id) // Ensure record ID is URL encoded if it contains special characters
+            rawurlencode($record_id) // URL encode the record ID
         );
-        error_log('BSBM DEBUG: Fetching NocoDB record by ID. API URL: ' . $api_url);
+
+        error_log('BSBM DEBUG: Fetching NocoDB record by ID. API URL: ' . $api_url); // For verification
 
         $response = wp_remote_get( $api_url, array(
             'headers' => array( 'xc-token' => $token ),
