@@ -663,8 +663,19 @@ class BigScreenBadMovies_Plugin {
         }
 
         // Get transient data if any
-        $pending_experiments_from_nocodb = get_transient( 'bsbm_pending_experiments_from_nocodb' );
+        $pending_experiments_from_nocodb_all = get_transient( 'bsbm_pending_experiments_from_nocodb' );
+        if ( !is_array($pending_experiments_from_nocodb_all) ) {
+            $pending_experiments_from_nocodb_all = array();
+        }
         $wp_experiments_to_sync = get_transient( 'bsbm_wp_experiments_to_sync_list' );
+
+        // Pagination for NocoDB to WordPress
+        $per_page_nocodb = 20; // Number of items per page
+        $current_page_nocodb = isset( $_GET['paged_nocodb'] ) ? max( 1, intval( $_GET['paged_nocodb'] ) ) : 1;
+        $total_items_nocodb = count( $pending_experiments_from_nocodb_all );
+        $total_pages_nocodb = ceil( $total_items_nocodb / $per_page_nocodb );
+        $offset_nocodb = ( $current_page_nocodb - 1 ) * $per_page_nocodb;
+        $pending_experiments_from_nocodb_paginated = array_slice( $pending_experiments_from_nocodb_all, $offset_nocodb, $per_page_nocodb );
 
         ?>
         <div class="wrap">
@@ -745,9 +756,9 @@ class BigScreenBadMovies_Plugin {
                                 <?php submit_button( __( 'Fetch New from NocoDB', 'bsbm-integration' ), 'primary', 'fetch_from_nocodb_submit', false ); ?>
                             </form>
 
-                            <?php if ( ! empty( $pending_experiments_from_nocodb ) ) : ?>
+                            <?php if ( ! empty( $pending_experiments_from_nocodb_all ) ) : ?>
                                 <h3><?php _e( 'Review & Import from NocoDB', 'bsbm-integration' ); ?></h3>
-                                <p><?php _e( 'Select experiments to import into WordPress.', 'bsbm-integration' ); ?></p>
+                                <p><?php printf(esc_html__('Showing %d of %d experiments. Select experiments to import into WordPress.', 'bsbm-integration'), count($pending_experiments_from_nocodb_paginated), $total_items_nocodb ); ?></p>
                                 <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
                                     <input type="hidden" name="action" value="bsbm_import_selected_experiments_from_nocodb">
                                     <?php wp_nonce_field( 'bsbm_import_selected_experiments_from_nocodb_nonce', 'bsbm_import_nocodb_nonce' ); ?>
@@ -761,21 +772,46 @@ class BigScreenBadMovies_Plugin {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php foreach ( $pending_experiments_from_nocodb as $index => $exp ) : ?>
-                                                <tr>
-                                                    <th scope="row" class="check-column">
-                                                        <input type="checkbox" name="selected_experiments_from_nocodb[]" value="<?php echo esc_attr( $exp['id_from_nocodb'] ); ?>" checked="checked">
-                                                    </th>
-                                                    <td><?php echo esc_html( $exp['title'] ?? 'N/A' ); ?></td>
-                                                    <td><?php echo esc_html( $exp['event_date'] ? date_i18n( get_option('date_format'), strtotime($exp['event_date']) ) : 'N/A' ); ?></td>
-                                                </tr>
-                                            <?php endforeach; ?>
+                                            <?php if ( ! empty( $pending_experiments_from_nocodb_paginated ) ) : ?>
+                                                <?php foreach ( $pending_experiments_from_nocodb_paginated as $index => $exp ) : ?>
+                                                    <tr>
+                                                        <th scope="row" class="check-column">
+                                                            <input type="checkbox" name="selected_experiments_from_nocodb[]" value="<?php echo esc_attr( $exp['id_from_nocodb'] ); ?>" checked="checked">
+                                                        </th>
+                                                        <td><?php echo esc_html( $exp['title'] ?? 'N/A' ); ?></td>
+                                                        <td><?php echo esc_html( $exp['event_date'] ? date_i18n( get_option('date_format'), strtotime($exp['event_date']) ) : 'N/A' ); ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php else : ?>
+                                                <tr><td colspan="3"><?php _e('No experiments found on this page, or all have been processed.', 'bsbm-integration'); ?></td></tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
+
+                                    <?php if ( $total_pages_nocodb > 1 ) : ?>
+                                        <div class="tablenav">
+                                            <div class="tablenav-pages">
+                                                <span class="displaying-num"><?php printf(esc_html__('%s items', 'bsbm-integration'), $total_items_nocodb); ?></span>
+                                                <span class="pagination-links">
+                                                    <?php
+                                                    echo paginate_links( array(
+                                                        'base' => add_query_arg( 'paged_nocodb', '%#%' ),
+                                                        'format' => '',
+                                                        'prev_text' => __('&laquo;'),
+                                                        'next_text' => __('&raquo;'),
+                                                        'total' => $total_pages_nocodb,
+                                                        'current' => $current_page_nocodb,
+                                                    ) );
+                                                    ?>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
                                     <?php submit_button( __( 'Import Selected to WordPress', 'bsbm-integration' ), 'secondary', 'import_to_wp_submit', false, array('style' => 'margin-top:10px;') ); ?>
                                 </form>
                             <?php elseif ( isset( $_GET['message'] ) && $_GET['message'] === 'fetched_from_nocodb' ) : ?>
-                                <p><?php _e( 'All fetched experiments have been processed or there were none to display.', 'bsbm-integration' ); ?></p>
+                                <p><?php _e( 'All fetched experiments have been processed or there were none to display from NocoDB.', 'bsbm-integration' ); ?></p>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -850,11 +886,9 @@ class BigScreenBadMovies_Plugin {
             <div style="clear:both;"></div>
         </div>
         <?php
-        // Clear transients after displaying them
-        if ( ! empty( $pending_experiments_from_nocodb ) && !isset($_GET['preserve_transient_nocodb'])) { // Add a query param to preserve if debugging
-            delete_transient( 'bsbm_pending_experiments_from_nocodb' );
-        }
-        if ( ! empty( $wp_experiments_to_sync ) && !isset($_GET['preserve_transient_wp'])) { // Add a query param to preserve if debugging
+        // Clear transients after displaying them - MODIFIED: Only clear wp_experiments_to_sync here.
+        // bsbm_pending_experiments_from_nocodb is managed by its action handlers due to pagination.
+        if ( ! empty( $wp_experiments_to_sync ) && !isset($_GET['preserve_transient_wp'])) { 
             delete_transient( 'bsbm_wp_experiments_to_sync_list' );
         }
     }
