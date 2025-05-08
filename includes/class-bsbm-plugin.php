@@ -1173,4 +1173,11 @@ class BigScreenBadMovies_Plugin {
         // Register custom REST API routes here
     }
 
+    // Placeholder for admin scripts/styles enqueue to prevent fatal error
+    public function enqueue_admin_form_assets() {
+        // Example: Enqueue admin CSS/JS here if needed
+        // wp_enqueue_style('bsbm-admin-style', plugins_url('admin/css/bsbm-admin.css', __FILE__));
+        // wp_enqueue_script('bsbm-admin-script', plugins_url('admin/js/bsbm-admin-form.js', __FILE__), array('jquery'), null, true);
+    }
+
 } // End class BigScreenBadMovies_Plugin
