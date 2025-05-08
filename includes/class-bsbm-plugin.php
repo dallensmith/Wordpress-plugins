@@ -20,12 +20,13 @@ class BigScreenBadMovies_Plugin {
 	protected $version;
 	private $options = null;
 	private $tmdb_api_base_url = 'https://api.themoviedb.org/3';
+	private static $updater_initialized = false; // New static flag
 
 	public function __construct() {
 		if ( defined( 'BSBM_PLUGIN_VERSION' ) ) { $this->version = BSBM_PLUGIN_VERSION; } else { $this->version = '1.0.0'; }
 		$this->plugin_name = 'bsbm-integration';
 		$this->define_hooks();
-		$this->init_updater(); // Add this line
+		// $this->init_updater(); // REMOVED from constructor
 	}
 
 	private function define_hooks() {
@@ -405,17 +406,27 @@ class BigScreenBadMovies_Plugin {
 	// --- Other Class Methods ---
 	public function get_plugin_name() { return $this->plugin_name; }
 	public function get_version() { return $this->version; }
-	public function run() { /* ... */ }
+
+	public function run() {
+		$this->maybe_init_updater(); // Initialize updater here
+		/* ... any other run logic ... */
+	}
 
 	/**
-	 * Initialize the plugin update checker.
+	 * Initialize the plugin update checker, ensuring it only runs once.
 	 *
-	 * @since 1.0.0
+	 * @since 1.0.0 (Modified in 1.0.13+)
 	 */
-	private function init_updater() {
+	private function maybe_init_updater() {
+		if ( self::$updater_initialized ) {
+			return;
+		}
+
 		if ( ! class_exists( 'YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+			// Optionally log: error_log('BSBM Plugin: Plugin Update Checker library (PucFactory) not found.');
 			return; // Library not loaded
 		}
+
 		$myUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 			'https://github.com/dallensmith/Wordpress-plugins/', // GitHub repository URL.
 			BSBM_PLUGIN_PATH . 'bigscreenbadmovies-plugin.php', // Main plugin file.
@@ -427,6 +438,10 @@ class BigScreenBadMovies_Plugin {
 
 		// Optional: If your repository is private, uncomment the following line and add your Personal Access Token.
 		// $myUpdateChecker->setAuthentication('YOUR_GITHUB_PAT');
+		
+		self::$updater_initialized = true;
 	}
+
+	// The old init_updater() method is now removed as its logic is in maybe_init_updater()
 
 } // End class BigScreenBadMovies_Plugin
