@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../ReadmeParser.php';
 
 namespace YahnisElsts\PluginUpdateChecker\v5p5\Vcs;
 
