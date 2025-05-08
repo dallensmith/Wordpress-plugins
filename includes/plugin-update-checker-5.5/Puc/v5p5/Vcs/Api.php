@@ -136,7 +136,6 @@ if ( !class_exists(Api::class, false) ):
 				return array();
 			}
 
-			require_once __DIR__ . '/../ReadmeParser.php'; // Added this line
 			$parser = new PucReadmeParser();
 			return $parser->parse_readme_contents($fileContents);
 		}
