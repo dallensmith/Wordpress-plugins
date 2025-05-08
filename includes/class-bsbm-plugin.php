@@ -809,13 +809,17 @@ class BigScreenBadMovies_Plugin {
 
     // Renamed from handle_fetch_pending_experiments to align with new structure
     public function handle_fetch_pending_experiments_from_nocodb() {
-        error_log('BSBM DEBUG: Attempting to enter handle_fetch_pending_experiments_from_nocodb'); // DEBUG LINE
+        error_log('BSBM DEBUG: Entered handle_fetch_pending_experiments_from_nocodb'); 
         if ( ! isset( $_POST['bsbm_fetch_nocodb_nonce'] ) || ! wp_verify_nonce( $_POST['bsbm_fetch_nocodb_nonce'], 'bsbm_fetch_pending_experiments_from_nocodb_nonce' ) ) {
+            error_log('BSBM DEBUG: Nonce check failed in handle_fetch_pending_experiments_from_nocodb');
             wp_die( __( 'Security check failed.', 'bsbm-integration' ) );
         }
         if ( ! current_user_can( 'manage_options' ) ) {
+            error_log('BSBM DEBUG: Permission check failed in handle_fetch_pending_experiments_from_nocodb');
             wp_die( __( 'You do not have sufficient permissions.', 'bsbm-integration' ) );
         }
+
+        error_log('BSBM DEBUG: Nonce and permission checks passed.');
 
         $options = $this->get_plugin_options();
         $nocodb_url = trailingslashit( $options['nocodb_url'] ?? '' );
@@ -823,83 +827,97 @@ class BigScreenBadMovies_Plugin {
         $table_name = $options['nocodb_table_id'] ?? ''; // Assuming this is table name or ID
         $token = $options['nocodb_token'] ?? '';
 
+        error_log('BSBM DEBUG: Options fetched: URL: ' . $nocodb_url . ', ProjectID: ' . $project_id . ', Table: ' . $table_name . ', Token Set: ' . !empty($token));
+
         if ( empty( $nocodb_url ) || empty( $project_id ) || empty( $table_name ) || empty( $token ) ) {
+            error_log('BSBM DEBUG: NocoDB settings incomplete. Redirecting.');
             wp_redirect( add_query_arg( 'message', 'fetch_from_nocodb_error', menu_page_url( 'bsbm-sync-hub', false ) ) );
             exit;
         }
 
-        // Construct the API URL - adjust 'limit', 'offset', 'fields' as needed
-        // Example: /api/v1/db/data/noco/{projectId}/{tableIdOrName}/records
         $api_url = sprintf(
-            '%sapi/v1/db/data/noco/%s/%s/records?limit=1000', // Fetch a large number to get all, or implement pagination if so
+            '%sapi/v1/db/data/noco/%s/%s/records?limit=1000', 
             $nocodb_url,
             $project_id,
             $table_name
         );
+        error_log('BSBM DEBUG: NocoDB API URL: ' . $api_url);
 
         $response = wp_remote_get( $api_url, array(
             'headers' => array( 'xc-token' => $token ),
             'timeout' => 30,
         ) );
 
-        if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-            // Log error: error_log('NocoDB API Error: ' . $response->get_error_message());
+        if ( is_wp_error( $response ) ) {
+            error_log('BSBM DEBUG: wp_remote_get WP_Error: ' . $response->get_error_message());
+            wp_redirect( add_query_arg( 'message', 'fetch_from_nocodb_error', menu_page_url( 'bsbm-sync-hub', false ) ) );
+            exit;
+        }
+        
+        $response_code = wp_remote_retrieve_response_code( $response );
+        error_log('BSBM DEBUG: wp_remote_get response code: ' . $response_code);
+
+        if ( $response_code !== 200 ) {
+            error_log('BSBM DEBUG: Non-200 response. Body: ' . wp_remote_retrieve_body( $response ));
             wp_redirect( add_query_arg( 'message', 'fetch_from_nocodb_error', menu_page_url( 'bsbm-sync-hub', false ) ) );
             exit;
         }
 
         $body = wp_remote_retrieve_body( $response );
+        error_log('BSBM DEBUG: Successfully retrieved body from NocoDB.');
         $data = json_decode( $body, true );
 
-        // NocoDB API v1 returns records under a "list" key and the actual records are in "list" array inside that.
-        // For NocoDB API v2, it might be directly $data['list'] or just $data if it's an array of records.
-        // Please verify the exact structure of your NocoDB API response.
-        // Assuming NocoDB API v1/v2 structure where records are in $data['list']
-        $nocodb_experiments = isset($data['list']) && is_array($data['list']) ? $data['list'] : [];
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('BSBM DEBUG: JSON decode error: ' . json_last_error_msg() . '. Body was: ' . substr($body, 0, 500)); // Log first 500 chars of body
+            wp_redirect( add_query_arg( 'message', 'fetch_from_nocodb_error', menu_page_url( 'bsbm-sync-hub', false ) ) );
+            exit;
+        }
+        error_log('BSBM DEBUG: JSON decoded successfully.');
 
+        $nocodb_experiments = isset($data['list']) && is_array($data['list']) ? $data['list'] : [];
+        error_log('BSBM DEBUG: Count of experiments from NocoDB list: ' . count($nocodb_experiments));
 
         if ( empty( $nocodb_experiments ) ) {
+            error_log('BSBM DEBUG: No new experiments found in NocoDB. Redirecting.');
             wp_redirect( add_query_arg( 'message', 'no_new_experiments_from_nocodb', menu_page_url( 'bsbm-sync-hub', false ) ) );
             exit;
         }
 
-        // Get existing experiment NocoDB IDs from WordPress post meta
         global $wpdb;
         $existing_nocodb_ids_results = $wpdb->get_col( $wpdb->prepare( 
             "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s", 
             '_bsbm_nocodb_id' 
         ) );
         $existing_nocodb_ids = array_map('strval', $existing_nocodb_ids_results);
-
+        error_log('BSBM DEBUG: Found ' . count($existing_nocodb_ids) . ' existing NocoDB IDs in WordPress.');
 
         $pending_experiments = array();
-
         foreach ( $nocodb_experiments as $exp_data ) {
-            // IMPORTANT: Adjust these field names to match your NocoDB table columns
-            $nocodb_id = strval($exp_data['Id'] ?? ($exp_data['id'] ?? null)); // Common NocoDB ID fields
-            $title = $exp_data['ExperimentTitle'] ?? ($exp_data['Title'] ?? 'Untitled Experiment'); // Adjust field name
-            $event_date_str = $exp_data['EventDate'] ?? ($exp_data['Date'] ?? null); // Adjust field name
+            $nocodb_id = strval($exp_data['Id'] ?? ($exp_data['id'] ?? null));
+            $title = $exp_data['ExperimentTitle'] ?? ($exp_data['Title'] ?? 'Untitled Experiment');
+            $event_date_str = $exp_data['EventDate'] ?? ($exp_data['Date'] ?? null);
 
-            if ( empty($nocodb_id) ) continue; // Skip if no ID
+            if ( empty($nocodb_id) ) continue;
 
-            // Check if this experiment (by NocoDB ID) already exists
             if ( ! in_array( $nocodb_id, $existing_nocodb_ids ) ) {
                 $pending_experiments[] = array(
                     'id_from_nocodb' => $nocodb_id,
                     'title' => $title,
-                    'event_date' => $event_date_str, // Store as string, format later if needed
-                    // Add ALL other fields you need from $exp_data to create the post later
-                    'full_data' => $exp_data // Store the full NocoDB record for import
+                    'event_date' => $event_date_str,
+                    'full_data' => $exp_data 
                 );
             }
         }
+        error_log('BSBM DEBUG: Found ' . count($pending_experiments) . ' pending experiments to import.');
 
         if ( empty( $pending_experiments ) ) {
+            error_log('BSBM DEBUG: No new experiments to import after filtering. Redirecting.');
             wp_redirect( add_query_arg( 'message', 'no_new_experiments_from_nocodb', menu_page_url( 'bsbm-sync-hub', false ) ) );
             exit;
         }
 
-        set_transient( 'bsbm_pending_experiments_from_nocodb', $pending_experiments, HOUR_IN_SECONDS ); // Store for 1 hour
+        set_transient( 'bsbm_pending_experiments_from_nocodb', $pending_experiments, HOUR_IN_SECONDS );
+        error_log('BSBM DEBUG: Pending experiments set in transient. Redirecting to fetched_from_nocodb.');
         wp_redirect( add_query_arg( 'message', 'fetched_from_nocodb', menu_page_url( 'bsbm-sync-hub', false ) ) );
         exit;
     }
