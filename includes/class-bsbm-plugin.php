@@ -835,13 +835,14 @@ class BigScreenBadMovies_Plugin {
             exit;
         }
 
+        // Corrected API URL structure for NocoDB v1 to list records
         $api_url = sprintf(
-            '%sapi/v1/db/data/noco/%s/%s/records?limit=1000', 
+            '%sapi/v1/db/data/v1/%s/%s?limit=1000&shuffle=0&offset=0', // Changed /noco/ to /v1/ and removed /records segment before query
             $nocodb_url,
             $project_id,
             $table_name
         );
-        error_log('BSBM DEBUG: NocoDB API URL: ' . $api_url);
+        error_log('BSBM DEBUG: NocoDB API URL (Corrected): ' . $api_url);
 
         $response = wp_remote_get( $api_url, array(
             'headers' => array( 'xc-token' => $token ),
